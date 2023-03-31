@@ -10,15 +10,14 @@ struct Args{
     #[arg(short, long)]
     range: String,
 
-    #[arg(short, long)]
-    ports: u16,
+    #[arg(short, long, use_value_delimiter = true)]
+    ports: Vec<u16>,
 }
 
 fn main(){
     let input = Args::parse();
     
-
-    println!("Input: {}, {}", input.range, input.ports);
+    println!("Input: {}, {:?}", input.range, input.ports);
 
     let ip_list: Vec<Ipv4Addr> = cidr_to_ips(input.range);
 
@@ -38,29 +37,46 @@ fn cidr_to_ips(cidr: String) -> Vec<Ipv4Addr> {
 
         let base_ip_int = u32::from(base_ip);
 
-        let range = 1 << (32 - subnet_mask);
+        if subnet_mask == 32 {
+            // If the subnet mask is /32, add only the single IP address
+            ips.push(base_ip);
+        } else if subnet_mask < 32 {
+            let range = 1 << (32 - subnet_mask);
 
-        // Adjust the loop to start from 1 and end at range - 1
-        for i in 1..(range - 1) {
-            let new_ip_int = base_ip_int | i;
+            // Calculate start and end of the loop based on the subnet mask
+            let start = if subnet_mask > 0 { 1 } else { 0 };
+            let end = if subnet_mask > 0 { range - 1 } else { range };
 
-            let new_ip = Ipv4Addr::from(new_ip_int);
-            ips.push(new_ip);
+            for i in start..end {
+                let new_ip_int = base_ip_int | i;
+
+                let new_ip = Ipv4Addr::from(new_ip_int);
+                ips.push(new_ip);
+            }
+        } else {
+            // If the subnet mask is invalid (greater than 32), return an empty vector
+            eprintln!("Invalid subnet mask: {}", subnet_mask);
         }
+    } else {
+        // If the user input is not in the correct format, return an empty vector
+        eprintln!("Invalid CIDR format: {}", cidr);
     }
 
     ips
 }
 
-fn check_port(l: Vec<Ipv4Addr>, p: u16) {
+
+fn check_port(l: Vec<Ipv4Addr>, p: Vec<u16>) {
     for ip in l {
-        let socket = SocketAddr::new(ip.into(), p);
-        match TcpStream::connect_timeout(&socket, Duration::from_secs(5)) {
-            Ok(_) => println!("Ip {} - alive on port {}", ip, p),
-            Err(e) => match e.kind() {
-                ErrorKind::TimedOut => println!("Ip {} timed out on port {}", ip, p),
-                _ => println!("Ip {} is dead on port {} - Error: {}", ip, p, e),
-            },
+        for port in &p {
+            let socket = SocketAddr::new(ip.into(), *port);
+            match TcpStream::connect_timeout(&socket, Duration::from_secs(5)) {
+                Ok(_) => println!("Ip {} - alive on port {}", ip, port),
+                Err(e) => match e.kind() {
+                    ErrorKind::TimedOut => println!("Ip {} timed out on port {}", ip, port),
+                    _ => println!("Ip {} is dead on port {} - Error: {}", ip, port, e),
+                },
+            }
         }
     }
 }
