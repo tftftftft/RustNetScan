@@ -11,4 +11,4 @@ Using:
 ./netscan_1 --range 192.168.0.0/24 --ports 80
 
 
-To Add: MultiThreading
+Done: MultiThreading
