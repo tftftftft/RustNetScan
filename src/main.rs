@@ -1,8 +1,12 @@
 use clap::Parser;
+use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 use std::net::{Ipv4Addr, TcpStream, SocketAddr};
 use std::str::FromStr;
 use std::time::Duration;
 use std::io::ErrorKind;
+use std::sync::Arc;
+use rayon::ThreadPoolBuilder;
+
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -12,6 +16,9 @@ struct Args{
 
     #[arg(short, long, use_value_delimiter = true)]
     ports: Vec<u16>,
+
+    #[arg(short, long, default_value = "4")]
+    threads: usize,
 }
 
 fn main(){
@@ -23,7 +30,7 @@ fn main(){
 
     println!("List: {:?}", ip_list);
 
-    check_port(ip_list, input.ports);
+    check_port(ip_list, input.ports, input.threads);
 }
 
 
@@ -66,17 +73,29 @@ fn cidr_to_ips(cidr: String) -> Vec<Ipv4Addr> {
 }
 
 
-fn check_port(l: Vec<Ipv4Addr>, p: Vec<u16>) {
-    for ip in l {
-        for port in &p {
-            let socket = SocketAddr::new(ip.into(), *port);
-            match TcpStream::connect_timeout(&socket, Duration::from_secs(5)) {
-                Ok(_) => println!("Ip {} - alive on port {}", ip, port),
-                Err(e) => match e.kind() {
-                    ErrorKind::TimedOut => println!("Ip {} timed out on port {}", ip, port),
-                    _ => println!("Ip {} is dead on port {} - Error: {}", ip, port, e),
-                },
+fn check_port(l: Vec<Ipv4Addr>, p: Vec<u16>, num_threads: usize) {
+    // Wrap the ports vector in an Arc
+    let ports = Arc::new(p);
+
+    // Create a thread pool with the specified number of threads
+    let pool = ThreadPoolBuilder::new()
+        .num_threads(num_threads)
+        .build()
+        .unwrap();
+
+    // Use the thread pool to process IP addresses in parallel
+    pool.install(|| {
+        l.par_iter().for_each(|ip| {
+            for port in &*ports {
+                let socket = SocketAddr::new((*ip).into(), *port);
+                match TcpStream::connect_timeout(&socket, Duration::from_secs(5)) {
+                    Ok(_) => println!("Ip {} - alive on port {}", ip, port),
+                    Err(e) => match e.kind() {
+                        ErrorKind::TimedOut => println!("Ip {} timed out on port {}", ip, port),
+                        _ => println!("Ip {} is dead on port {} - Error: {}", ip, port, e),
+                    },
+                }
             }
-        }
-    }
+        });
+    });
 }
