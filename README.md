@@ -4,7 +4,7 @@ Open ports network scanner written in rust
 Built for studying purpose, under development
 
 Build: 
-$cargo build
+$cargo build --release
 
 Using:
 
